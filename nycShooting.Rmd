@@ -1,0 +1,242 @@
+---
+title: "NYPD Shooting Incident Analysis"
+author: "Chris Murphy"
+date: "2023-06-08"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Investigating the NYPD Shooing Incident Data
+## Link to the data can be found here: [NYPD Shooting Incident Data](https://catalog.data.gov/dataset/nypd-shooting-incident-data-historic)
+
+## Background
+
+List of every shooting incident that occurred in NYC going back to 2006 through the end of the previous calendar year.
+
+This is a breakdown of every shooting incident that occurred in NYC going back to 2006 through the end of the previous calendar year. This data is manually extracted every quarter and reviewed by the Office of Management Analysis and Planning before being posted on the NYPD website. Each record represents a shooting incident in NYC and includes information about the event, the location and time of occurrence. In addition, information related to suspect and victim demographics is also included. This data can be used by the public to explore the nature of shooting/criminal activity. Please refer to the attached data footnotes for additional information about this dataset.
+
+## Project Step 1: Start and rmd Document
+### Start an rmd document that describes and imports the shooting project dataset in a reprodicible manner.
+
+To start I will import the tidyverse package that will be used throughout this analysis.  
+```{r, message=FALSE}
+library(tidyverse)
+```
+
+Next, I will import the dataset as a csv into RStudio as the variable nyc_shoota.
+```{r, message=FALSE}
+url_in <- "/Users/cman/Downloads/NYPD_Shooting_Incident_Data__Historic_.csv"
+nyc_shoota <- read_csv(url_in[1])
+```
+
+## Project Step 2: Tidy and Transform Your Data
+### Add to your Rmd document a summary of the data and clean up your dataset by changing appropriate variables to factor and date types and getting rid of any columns not needed.  Show the summary of your data to be sure there is no missing data. If there is missing data, describe how you plan to handle it.
+
+Here is the summary of the data:
+```{r}
+summary(nyc_shoota)
+```
+
+There are some issues I noticed with the quality of the data in its raw form:
+1. The OCCUR_DATE column is classified as a character. It should be a date time.
+2. The is some missing data for some of the columns
+
+To fix problem one, I can simply change the OCCUR_DATE column to a date field with the following code:
+```{r}
+nyc_shoota$OCCUR_DATE <- as.Date(nyc_shoota$OCCUR_DATE, format = "%m/%d/%y")
+```
+
+To understand the extent of problem two, the following function can be run to output the number of NULL values as well as the % of rows that are null. 
+
+```{r}
+count_null_values <- function(data) {
+  for (col in colnames(data)) {
+    null_count <- sum(is.na(data[col]))
+    null_pct <- (null_count / nrow(data)) * 100
+    
+    cat("Column:", col, "- Null Count:", null_count, "- Null %:", null_pct, "\n")
+  }
+}
+
+count_null_values(nyc_shoota)
+```
+
+From the output above, we can see that there are a notable amount of NULL values the following columns:
+1. LOC_OF_OCCUR_DESC (94% NULL)
+2. LOC_CLASSFCTN_DESC (94% NULL)
+
+Due to the large majority of NULL values, both of these columns will be dropped from the dataset.
+
+```{r}
+drop <- c("LOC_OF_OCCUR_DESC", "LOC_CLASSFCTN_DESC", "LOCATION_DESC")
+nyc_shoota <- nyc_shoota[ , !(names(nyc_shoota) %in% drop)]
+```
+
+The following columns have notable NULL values, so we will drop the rows where there are NULL values present:
+1. PERP_AGE_GROUP
+2. PERP_SEX
+3. PERP_RACE
+
+```{r}
+nyc_shoota <- nyc_shoota %>% 
+  drop_na(PERP_AGE_GROUP)
+nyc_shoota <- nyc_shoota %>% 
+  drop_na(PERP_SEX)
+nyc_shoota <- nyc_shoota %>% 
+  drop_na(PERP_RACE)
+```
+
+```{r}
+nrow(nyc_shoota)
+```
+
+By dropping the NULL values from the three columns, we are still left with 17,968 rows (from our 27,312 in the original dataset) which should be ok for our analysis.
+
+There are two additional columns that have NULL values:
+1. Latidude
+2. Longitude
+
+However, since there are only 10 rows each where a NULL value is present, these will be ignored.
+
+```{r}
+count_null_values <- function(data) {
+  for (col in colnames(data)) {
+    null_count <- sum(is.na(data[col]))
+    null_pct <- (null_count / nrow(data)) * 100
+    
+    cat("Column:", col, "- Null Count:", null_count, "- Null %:", null_pct, "\n")
+  }
+}
+
+count_null_values(nyc_shoota)
+```
+
+Our dataset is clean and ready for analysis!
+
+## Project Step 3: Add Visualizations and Analysis
+### Add at least two different visualizations & some analysis to your Rmd.  Does this raise additional questions that you should investigate?  
+
+I will first start with a few basic bar charts that shows the count of different column groupings.
+
+Here, I am creating a new variable (vic_sex_group) that groups by the VIC_SEX column. 
+
+```{r}
+vic_sex_group <- nyc_shoota %>%
+  group_by(VIC_SEX) %>%
+  summarise(total_count = n())
+```
+
+Here is a view of the new dataset:
+
+```{r}
+vic_sex_group
+```
+
+Then I am visualizing the number of incidents by the victims sex:
+
+```{r}
+plot <- barplot(height=vic_sex_group$total_count, names=vic_sex_group$VIC_SEX, col="#69b3a2", main="Victom Sex Count")
+text(x = plot, y = vic_sex_group$total_count, label = vic_sex_group$total_count, pos=1, xpd=TRUE, cex = 0.8, col = "black")
+```
+
+From the graph, we can see that the large majority of incidents involved a male victim. Interesting!
+
+Next I will create a similar visualization to look at the number of incidents by boro.
+
+Here I am creating a new dataset, grouping the data by the BORO field and counting the number of rows:
+
+```{r}
+BORO_group <- nyc_shoota %>%
+  group_by(BORO) %>%
+  summarise(total_count = n())
+```
+
+Then I am visualizing the number of incidents by the NYC borough it took place in:
+
+```{r}
+plot <- barplot(height=BORO_group$total_count, xlab='', col="pink", main="Boro Count")
+text(x = plot, y = BORO_group$total_count, label = BORO_group$total_count, pos=1, xpd=TRUE, cex = 0.8, col = "black")
+axis(1, at=plot , labels=BORO_group$BORO, tick=FALSE, las=2, line=-0.5, cex.axis=0.5)
+```
+
+From the visualization we can see that that majority of incidents took place in either the Bronx or Brooklyn. This raises another question, how does the number of incidents differ over time? Was there a particular time frame when the majority of these incidents occurred? Lets find out.
+
+First, I am creating a new dataset grouping by the OCCUR_DATE and the BORO the incident took place.
+
+```{r, message=FALSE}
+inc_by_boro <- nyc_shoota %>%
+  group_by(OCCUR_DATE, BORO) %>%
+  summarise(total_count = n())
+```
+
+Next, I am creating a new column that will count the number of accumulative incidents that happened over time.
+
+```{r}
+inc_by_boro <- inc_by_boro %>%
+  group_by(BORO) %>% 
+  mutate(accum = cumsum(total_count))
+```
+
+Then I am filtering the dataset I just created by the NYC borough. These borough specific datasets will be graphed in the next step.
+
+```{r}
+bronx  <- filter(inc_by_boro, BORO == "BRONX")
+brooklyn <- filter(inc_by_boro, BORO == "BROOKLYN")
+queens <- filter(inc_by_boro, BORO == "QUEENS")
+staten <- filter(inc_by_boro, BORO == "STATEN ISLAND")
+manhattan <-filter(inc_by_boro, BORO == "MANHATTAN")
+```
+
+Finally, I am plotting each borough filtered dataset, assigning each a color, and adding a legend.
+
+```{r}
+plot(bronx$OCCUR_DATE, bronx$accum, type="l", lwd=5, col="red", xlab="Occur Date", ylab="Accumulation of Incidents", main="Accumulation of Incidents by Boro")
+lines(queens$OCCUR_DATE, queens$accum, type="l", lwd=5, col="blue")
+lines(staten$OCCUR_DATE, staten$accum, type="l", lwd=5, col="green")
+lines(manhattan$OCCUR_DATE, manhattan$accum, type="l", lwd=5, col="pink")
+lines(brooklyn$OCCUR_DATE, brooklyn$accum, type = "l", lwd=5, col="black")
+legend("topleft",                                       # Add legend to plot
+       legend = c("Bronx", "Queens", "Staten Island", "Manhattan", "Brooklyn"),
+       col = c("red", "blue", "green", "pink", "black"),
+       lty = 1)
+```
+
+From the graph we can see that there was a clear uptick in incidents around April of 2020 in both Brooklyn and the Bronx. What is the reason for this uptick?
+
+For my final visualization, I will look at how the victims race varies over time.
+
+To start, I will create a new data set grouping by the OCCUR_DATE by month as well as the VIC_RACE columns. Then I will count the number of incidents in a new column.
+
+```{r, message=FALSE}
+inc_by_race <- nyc_shoota %>%
+  group_by(month = lubridate::floor_date(OCCUR_DATE, 'month'), VIC_RACE) %>%
+  summarise(total_count = n())
+```
+
+Here we can see a few lines of the newly created dataset inc_by_race.
+
+```{r}
+head(inc_by_race)
+```
+
+I can then plot this data using the package ggplot. I will use the month on the X axis and incident count on the Y axis. We can breakdown the bars further by the victims race.
+
+```{r}
+ggplot(inc_by_race, aes(x = month, y = total_count, fill = VIC_RACE)) + geom_col() + ggtitle("Incident by Race Over Time") + ylab('Incident Count') + xlab('Month')
+```
+
+This is a comprehensive graph. Not only can we see how the total number of incidents vary over time, but also which victims race is being effected most. The month of highest incidents was July of 2020 where the victims were predominately black.
+
+## Project Step #4: Add Bias Identification
+### Write the conclusion to your project report and include any possible sources of bias.  Be sure to identify what your personal bias might be and how you have mitigated that.
+
+In conclusion, I have successfully loaded the NYPD Shooting Incident data, dropped unecessary columns and handled missing data. With the data in a usable format, I created multiple datasets that enabled powerful visualizations on different variables from the data set.  I learned that the large majority of NYPD shooting incidents from January 2020 - January 2021 involved a male, black victim in Bronx or Brooklyn. I also learned that this problem had gotten worse throughout the year.
+
+My personal bias is that since I live in a predominately white state with little ethnic diversity, I would have expected there to be a more even spread across the victims race. To mitigate this bias, I decided to look all races. If I only limited the dataset to white victims, my visualizations and analysis would have told a much different picture. 
+
+
