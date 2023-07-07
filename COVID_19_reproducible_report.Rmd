@@ -212,3 +212,7 @@ US_state_totals %>% ggplot() + geom_point(aes(x = cases_per_hun, y = (100 * deat
 ```
 
 The linear regression model does fairly well in predicting the death and cases per hundred people. I am pleased with this outcome.
+
+## Bias Identification
+
+There are some areas of bias I kept in mind while completing this analysis. To start, I had watched a lot of news reports of the COVID-19 pandemic during the height of the cases. There was definitely a reporting bias to some countries that were experiencing a harder time than others. Another source of bias was that during the start of the pandemic, I was living abroad in China. I saw first hand how bad the virus was impacting people before it had been spread throughout the world. Although I was interested in seeing China's numbers throughout this analysis, I chose not to solely focus on China's situation. Bias is definitely important to consider while completeting any analysis as it could impact your results.
