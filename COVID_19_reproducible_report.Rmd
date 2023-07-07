@@ -1,0 +1,214 @@
+---
+title: "COVID_19_reproducible_report"
+author: "Chris Murphy"
+date: "2023-07-04"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+## Importing necessary packages
+
+I will be extensively using the tidyverse package for data manipulation/visualization. Here is the import into the RStudio environment.
+
+```{r, message=FALSE}
+library(tidyverse)
+```
+
+## Reading in the raw verisons of the datasets
+
+Next, we will get the data from GitLab. It is important to get the raw form of the data. Otherwise, you will get an error. Then I'm using the str_c commany to store the datasets in the variable 'urls'.
+
+```{r, message=FALSE}
+url_in <- "https://github.com/CSSEGISandData/COVID-19/blob/master/csse_covid_19_data/csse_covid_19_time_series/"
+file_names <- c("time_series_covid19_confirmed_global.csv?raw=true",
+                "time_series_covid19_deaths_global.csv?raw=true",
+                "time_series_covid19_confirmed_US.csv?raw=true",
+                "time_series_covid19_deaths_US.csv?raw=true")
+urls <- str_c(url_in, file_names)
+```
+
+Here I'm reading the four different files into different variables. There are separate files for both global and US data, which includes the cases and deaths over time. 
+
+```{r, message=FALSE}
+global_cases <-  read_csv(urls[1])
+global_deaths <- read_csv(urls[2])
+US_cases <-      read_csv(urls[3])
+US_deaths <-     read_csv(urls[4])
+```
+
+## Reconfiguring the global_cases dataset
+
+First, I will start working with the global cases data set. In its raw form, each column is a new date. I'd like to modify the dataset where each row is a new date. I will use the following function to achieve this outcome.
+
+```{r}
+global_cases <- global_cases %>%
+  pivot_longer(cols = -c('Province/State',
+                         'Country/Region', Lat, Long),
+               names_to = "date",
+               values_to = "cases") %>%
+  select(-c(Lat, Long))
+```
+
+## Reconfiguring the global_deaths dataset
+
+I will do the same process above, but this time with the global death data set.
+
+```{r}
+global_deaths <- global_deaths %>%
+  pivot_longer(cols = -c('Province/State',
+                         'Country/Region', Lat, Long),
+               names_to = "date",
+               values_to = "deaths") %>%
+  select(-c(Lat, Long))
+```
+
+## Joining the global_cases to the global_deaths to create the new global dataset
+
+To create a full global data set with both cases and deaths, I will join the two data sets using the full_join function. I am also including population data which is being taken from a separate data source from the original GitLab repo.
+
+```{r, message=FALSE}
+global <- global_cases %>%
+  full_join(global_deaths) %>%
+  rename(Country_Region = 'Country/Region',
+         Province_State = 'Province/State') %>%
+  mutate(date = mdy(date))
+
+global <- global %>% filter(cases > 0)
+
+global <- global %>%
+  unite("Combined_Key",
+        c(Province_State, Country_Region),
+        sep = ", ",
+        na.rm = TRUE,
+        remove = FALSE)
+
+uid_lookup_url <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/UID_ISO_FIPS_LookUp_Table.csv" 
+
+uid <- read_csv(uid_lookup_url) %>%
+  select(-c(Lat, Long_, Combined_Key, code3, iso2, iso3, Admin2))
+
+global <- global %>%
+  left_join(uid, by = c("Province_State", "Country_Region")) %>%
+  select(-c(UID, FIPS)) %>%
+  select(Province_State, Country_Region, date,
+         cases, deaths, Population,
+         Combined_Key)
+```
+
+I now have a full global set with deaths, cases, and population by day. I will use the data in this form to run my analysis.
+
+## Now working on the US dataset, joining US_cases and US_deaths into a new dataset: US.
+
+Here, I am performing the same steps as in the global data set to create a full US data set with both deaths, and cases where each row represents a new day.
+
+```{r, message=FALSE}
+US_cases %>%
+  pivot_longer(cols = -(UID:Combined_Key),
+               names_to = "date",
+               values_to = "cases")
+
+US_cases <- US_cases %>%
+  pivot_longer(cols = -(UID:Combined_Key),
+               names_to = "date",
+               values_to = "cases") %>%
+  select(Admin2:cases) %>%
+  mutate(date = mdy(date)) %>%
+  select(-c(Lat, Long_))
+
+US_deaths <- US_deaths %>%
+  pivot_longer(cols = -(UID:Population),
+               names_to = "date",
+               values_to = "deaths") %>%
+  select(Admin2:deaths) %>%
+  mutate(date = mdy(date)) %>%
+  select(-c(Lat, Long_))
+
+US <- US_cases %>%
+  full_join(US_deaths)
+```
+
+## Basic visualizations
+
+Now on to the visualization phase. To start, I will create a few bar charts to show the states with the most number of cases. I have to perform a group by on the Province_State you can see in the code below. Wyoming had an incredible amount of cases in one day which is extremely interesting. Wyoming is a less populated state compared to most others. This is not what I was expecting to see.
+
+```{r}
+max_cases_by_state <- US %>%
+  group_by(Province_State) %>%
+  summarize(cases = max(cases), deaths = max(deaths))
+
+plot <- barplot(head(sort(max_cases_by_state$cases, decreasing = TRUE), 10), col ="red", names=head(sort(max_cases_by_state$Province_State, decreasing = TRUE), 10), main="Max number of cases by state", las=2)
+```
+
+Here is the same visualization but looking at the max number of deaths by state. From the graph below you can also see Wyoming had the most amount of deaths in one day too! Very interesting.
+
+```{r}
+plot <- barplot(head(sort(max_cases_by_state$deaths, decreasing = TRUE), 10), col ="blue", names=head(sort(max_cases_by_state$Province_State, decreasing = TRUE), 10), main="Max number of deaths by state", las=2)
+```
+
+Now moving on to the global dataset. Here I am picking six countries from around the world to look into to see how their number of cases progressed over time. Each of these variables will become a line in a line chart below.
+
+```{r}
+italy <- filter(global, Country_Region == "Italy")
+india <- filter(global, Country_Region == "India")
+south_africa <- filter(global, Country_Region == "South Africa")
+chile <- filter(global, Country_Region == "Chile")
+japan <- filter(global, Country_Region == "Japan")
+norway <- filter(global, Country_Region == "Norway")
+```
+
+```{r}
+plot(italy$date, italy$cases, type="l", lwd=5, col="red", xlab="Date", ylab="Cases", main="Cases by Feature Country")
+lines(india$date, india$cases, type="l", lwd=5, col="black")
+lines(south_africa$date, south_africa$cases, type="l", lwd=5, col="purple")
+lines(chile$date, chile$cases, type="l", lwd=5, col="blue")
+lines(japan$date, japan$cases, type="l", lwd=5, col="green")
+lines(norway$date, norway$cases, type="l", lwd=5, col="pink")
+legend("topleft",                                     
+       legend = c("Italy", "India", "South Africa", "Chile", "Japan", "Norway"),
+       col = c("red", "black", "purple", "blue", "green", "pink"),
+       lty = 1)
+```
+
+Look at the at exponential curve in India! Italy and Japan also saw huge spikes in cases in early 2022.
+
+## Model: deaths/cases per hundred with linear regression
+
+For the last phase of the analysis I will create a model to attempt to predict the death and cases rate per hundred people by using the US dataset I previously created.
+
+I will create a new variable US_state_totals that will group the deaths and cases by state as well as creating two new columns, deaths_per_hun and cases_per_hun to capture the cases and deaths per hundred people. 
+
+I also filtered the dataset to include only rows that had cases and deaths > 0.
+
+```{r}
+US_state_totals  <- US %>%
+  group_by(Province_State) %>%
+  summarize(deaths = max(deaths), cases = max(cases),
+            population = max(Population),
+            cases_per_hun = 100 * cases / population,
+            deaths_per_hun = 100 * deaths / population) %>%
+  filter(cases > 0, deaths > 0)
+US_state_totals[is.na(US_state_totals) | US_state_totals=="Inf"] = NA
+```
+
+Now to create the model that will be graphed. Here I am using a linear regression model. You can see the new pred column in the data set.
+
+```{r}
+mod <- lm(deaths_per_hun ~ cases_per_hun, data = US_state_totals)
+mod2 <- update(mod, na.action = na.exclude)
+US_state_totals <- US_state_totals %>% ungroup() %>% mutate(pred = fitted(mod2))
+head(US_state_totals)
+```
+
+Here is the code to build the visualization. I am using ggplot to plot the cases per hundred on the x-axis and the deaths per hundred on the y axis. Here the actual data is represented in red and the predictions are colored in green. 
+
+```{r}
+US_state_totals %>% ggplot() + geom_point(aes(x = cases_per_hun, y = (100 * deaths_per_hun)), color = 'red') + geom_point(aes(x = cases_per_hun, y = (100 * pred)), color = 'green') + ggtitle('Linear Regression model predicting deaths/cases per hunderd people') + xlab('Cases per hundred') + ylab('Deaths per hundred')
+```
+
+The linear regression model does fairly well in predicting the death and cases per hundred people. I am pleased with this outcome.
